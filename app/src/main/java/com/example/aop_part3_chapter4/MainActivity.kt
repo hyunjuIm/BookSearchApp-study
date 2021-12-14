@@ -10,9 +10,11 @@ import android.util.Base64
 import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.room.Room
 import com.example.aop_part3_chapter4.adapter.BookAdapter
+import com.example.aop_part3_chapter4.adapter.HistoryAdapter
 import com.example.aop_part3_chapter4.api.BookService
 import com.example.aop_part3_chapter4.databinding.ActivityMainBinding
 import com.example.aop_part3_chapter4.model.History
@@ -29,6 +31,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var adapter: BookAdapter
+    private lateinit var historyAdapter: HistoryAdapter
     private lateinit var bookService: BookService
 
     private lateinit var db: AppDatabase
@@ -39,6 +42,8 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         initBookRecyclerView()
+        initHistoryRecyclerView()
+        initSearchEditText()
 
         db = Room.databaseBuilder(
             applicationContext,
@@ -77,15 +82,6 @@ class MainActivity : AppCompatActivity() {
                     Log.d(TAG, "MainActivity - $t")
                 }
             })
-
-        binding.searchEditText.setOnKeyListener { v, keyCode, event ->
-            if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == MotionEvent.ACTION_DOWN) {
-                search(binding.searchEditText.text.toString())
-                return@setOnKeyListener true
-            }
-
-            return@setOnKeyListener false
-        }
     }
 
     private fun search(keyWord: String) {
@@ -96,6 +92,7 @@ class MainActivity : AppCompatActivity() {
                     response: Response<SearchBookDto>
                 ) {
 
+                    hideHistoryView()
                     saveSearchKeyWord(keyWord)
 
                     if (response.isSuccessful.not()) {
@@ -114,9 +111,60 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onFailure(call: Call<SearchBookDto>, t: Throwable) {
+                    hideHistoryView()
                     Log.d(TAG, "MainActivity - $t")
                 }
             })
+    }
+
+    private fun initBookRecyclerView() {
+        adapter = BookAdapter()
+
+        binding.bookRecyclerView.layoutManager = LinearLayoutManager(this)
+        binding.bookRecyclerView.adapter = adapter
+    }
+
+    private fun initHistoryRecyclerView() {
+        historyAdapter = HistoryAdapter(historyDeleteClickedListener = {
+            deleteSearchKeyWord(it)
+        })
+
+        binding.historyRecyclerView.layoutManager = LinearLayoutManager(this)
+        binding.historyRecyclerView.adapter = historyAdapter
+//        initSearchEditText()
+    }
+
+    private fun initSearchEditText() {
+        binding.searchEditText.setOnKeyListener { v, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_ENTER && event.action == MotionEvent.ACTION_DOWN) {
+                search(binding.searchEditText.text.toString())
+                return@setOnKeyListener true
+            }
+
+            return@setOnKeyListener false
+        }
+
+        binding.searchEditText.setOnTouchListener { v, event ->
+            if (event.action == MotionEvent.ACTION_DOWN) {
+                showHistoryView()
+            }
+            return@setOnTouchListener false
+        }
+    }
+
+    private fun showHistoryView() {
+        Thread {
+            val keywords = db.historyDao().getAll().reversed()
+            runOnUiThread {
+                binding.historyRecyclerView.isVisible = true
+                historyAdapter.submitList(keywords.orEmpty())
+            }
+        }.start()
+        binding.historyRecyclerView.isVisible = true
+    }
+
+    private fun hideHistoryView() {
+        binding.historyRecyclerView.isVisible = false
     }
 
     private fun saveSearchKeyWord(keyWord: String) {
@@ -125,10 +173,10 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
-    private fun initBookRecyclerView() {
-        adapter = BookAdapter()
-
-        binding.bookRecyclerView.layoutManager = LinearLayoutManager(this)
-        binding.bookRecyclerView.adapter = adapter
+    private fun deleteSearchKeyWord(keyWord: String) {
+        Thread {
+            db.historyDao().delete(keyWord)
+            showHistoryView()
+        }.start()
     }
 }
